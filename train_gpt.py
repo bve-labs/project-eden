@@ -20,6 +20,8 @@ import numpy as np
 from dotenv import load_dotenv
 import pyodbc
 
+from EdenFoldLayer import EdenFoldLayer
+
 # Load environment configuration
 load_dotenv(Path(__file__).with_name(".env.local"))
 
@@ -123,45 +125,18 @@ def prepare_dummy_data(text_file: str, bin_file: str):
 # =============================================================================
 # 3. THE EDEN ARCHITECTURE (Implicit Neural Representation)
 # =============================================================================
-class EdenLayer(nn.Module):
-    """
-    The core innovation. Replaces nn.Linear.
-    Expands a 4-byte seed into a massive weight matrix in VRAM, 
-    but only saves/learns the tiny mixing coefficients.
-    """
-    def __init__(self, in_features, out_features, seed=42):
-        super().__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        
-        # 1. The Epigenome: This is the ONLY thing we train and save.
-        # A tiny vector of coefficients. Size: ~1KB.
-        self.mixing_coeffs = nn.Parameter(torch.ones(1)) 
-        self.bias = nn.Parameter(torch.zeros(out_features))
-
-        # 2. The Genome (DNA): We expand the seed into VRAM immediately.
-        # requires_grad=False ensures it is never trained or saved to the state_dict.
-        generator = torch.Generator().manual_seed(seed)
-        base_weight = torch.randn((out_features, in_features), generator=generator) / math.sqrt(in_features)
-        self.register_buffer('base_weight', base_weight, persistent=False) # not saved to the state_dict
-
-    def forward(self, x):
-        # Mix the static DNA with the learned Epigenetics
-        dynamic_weight = self.base_weight * self.mixing_coeffs
-        return F.linear(x, dynamic_weight, self.bias)
-
 class EdenBlock(nn.Module):
-    def __init__(self, d_model, n_heads, seed):
+    def __init__(self, d_model, n_heads, seed, num_folds=4):
         super().__init__()
         self.ln_1 = nn.LayerNorm(d_model)
-        # Replacing standard QKV projections with EDEN layers
-        self.attn_qkv = EdenLayer(d_model, 3 * d_model, seed=seed+1)
-        self.attn_proj = EdenLayer(d_model, d_model, seed=seed+2)
+        # Chromatin MoE projections keep the virtual DNA frozen and route per byte.
+        self.attn_qkv = EdenFoldLayer(d_model, 3 * d_model, num_folds=num_folds, seed=seed+1)
+        self.attn_proj = EdenFoldLayer(d_model, d_model, num_folds=num_folds, seed=seed+2)
         self.n_heads = n_heads
         
         self.ln_2 = nn.LayerNorm(d_model)
-        self.mlp_fc1 = EdenLayer(d_model, 4 * d_model, seed=seed+3)
-        self.mlp_fc2 = EdenLayer(4 * d_model, d_model, seed=seed+4)
+        self.mlp_fc1 = EdenFoldLayer(d_model, 4 * d_model, num_folds=num_folds, seed=seed+3)
+        self.mlp_fc2 = EdenFoldLayer(4 * d_model, d_model, num_folds=num_folds, seed=seed+4)
 
     def forward(self, x):
         B, T, C = x.size()
@@ -187,17 +162,17 @@ class EdenBlock(nn.Module):
         return x
 
 class EdenLM(nn.Module):
-    def __init__(self, vocab_size=256, d_model=512, n_heads=8, n_layers=8):
+    def __init__(self, vocab_size=256, d_model=512, n_heads=8, n_layers=8, num_folds=4):
         super().__init__()
         self.token_emb = nn.Embedding(vocab_size, d_model)
         self.pos_emb = nn.Embedding(1024, d_model) # Max context 1024 bytes
         
         self.blocks = nn.Sequential(*[
-            EdenBlock(d_model, n_heads, seed=1337 + i*10) for i in range(n_layers)
+            EdenBlock(d_model, n_heads, seed=1337 + i*10, num_folds=num_folds) for i in range(n_layers)
         ])
         
         self.ln_f = nn.LayerNorm(d_model)
-        self.lm_head = EdenLayer(d_model, vocab_size, seed=9999)
+        self.lm_head = EdenFoldLayer(d_model, vocab_size, num_folds=num_folds, seed=9999)
 
     def forward(self, idx, targets=None):
         B, T = idx.size()
