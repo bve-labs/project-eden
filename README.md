@@ -3,9 +3,9 @@
 **Epigenetic Data Encoding Network** — An Epigenetic Implicit Neural Representation (INR) Architecture by BVE LABS.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
-[![Framework](https://img.shields.io/badge/Framework-PyTorch-orange.svg)](#)
-[![Artifact Size](https://img.shields.io/badge/Artifact_Size-~2.8MB-success.svg)](#)
-[![Tokenizer](https://img.shields.io/badge/Tokenizer-Byte_Level_256-lightgrey.svg)](#)
+[![Framework](https://img.shields.io/badge/Framework-PyTorch-orange.svg)](https://pytorch.org)
+[![Artifact Size](https://img.shields.io/badge/Artifact_Size-~2.8MB-success.svg)](https://github.com/bve-labs/project-eden)
+[![Tokenizer](https://img.shields.io/badge/Tokenizer-Byte_Level_256-lightgrey.svg)](https://github.com/bve-labs/project-eden)
 
 ---
 
@@ -23,7 +23,7 @@ A completed pre-training run produces a checkpoint of roughly **2.8 MB**, well u
 
 Replaces standard `nn.Linear`. At initialization, a large pseudo-random `base_weight` matrix is expanded from a fixed integer seed directly into VRAM (`requires_grad=False`, never saved). The only trainable parameters are a scalar `mixing_coeffs` vector and a bias. During the forward pass:
 
-```
+```python
 dynamic_weight = base_weight * mixing_coeffs
 ```
 
@@ -35,7 +35,7 @@ No SentencePiece, no tiktoken, no vocabulary file. The tokenizer encodes raw UTF
 
 Because tokens are bytes, cross-entropy loss converts cleanly to **Validation Bits-Per-Byte**:
 
-```
+```text
 val_bpb = loss / ln(2)
 ```
 
@@ -48,7 +48,7 @@ Training data is memory-mapped from disk via `np.memmap`. This streams raw byte 
 ## Repository Structure
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `train_gpt.py` | Foundational pre-training loop on `fineweb.bin` |
 | `train_chat.py` | Instruction fine-tuning loop on `instructions.bin` |
 | `prepare_data.py` | Downloads 50,000 FineWeb-Edu samples → `fineweb.bin` |
@@ -152,7 +152,7 @@ docker run --gpus all \
 Each training run generates a unique `run_id` and logs metrics to an Azure SQL `training_logs` table:
 
 | Column | Type | Description |
-|---|---|---|
+| --- | --- | --- |
 | `run_id` | `text` | Unique 12-char hex identifier per run |
 | `step` | `integer` | Training step number |
 | `loss` | `numeric` | Cross-entropy loss |
@@ -166,7 +166,7 @@ Logging runs in a background `ThreadPoolExecutor` (1 worker). Errors are printed
 ## Hardware
 
 | Environment | Device |
-|---|---|
+| --- | --- |
 | Local development | Apple Silicon (MPS) |
 | Cloud training | NVIDIA H100 via [Spheron](https://www.spheron.network/pricing/) |
 | Container target | `nvidia/cuda:12.1.1-runtime-ubuntu22.04` |
