@@ -27,7 +27,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
 COPY . .
 
 # Run the data preparation script INSIDE the container during the build phase
-RUN python3 prepare_data.py
+RUN python3 prepare_data.py || test -f fineweb.bin
 
 # Default command will start the pre-training execution pipeline
 CMD ["python", "train_gpt.py"]
