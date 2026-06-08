@@ -1,0 +1,28 @@
+# Virtual environments
+eden_env/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Secrets and local config
+.env.local
+.env
+.env.*
+
+# Training artifacts and datasets (regenerate via prepare_*.py)
+eden_artifact.pt
+eden_artifact_chat.pt
+*.pt
+dummy.txt
+dummy.bin
+fineweb.bin
+instructions.bin
+
+# Local backups
+*_bkup.py
+
+# OS
+.DS_Store

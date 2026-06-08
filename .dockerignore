@@ -1,0 +1,25 @@
+# Secrets and local environment files
+.env.local
+.env
+.env.*
+
+# Do not bake old checkpoints into fresh training images
+eden_artifact.pt
+*.pt
+
+# Local Python environments and caches
+.venv/
+eden_env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# macOS/editor metadata
+.DS_Store
+**/.DS_Store
+
+# Git metadata is not needed inside the image
+.git/
+
+# Keep the prepared training dataset in the Docker build context.
+!fineweb.bin
