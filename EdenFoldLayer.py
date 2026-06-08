@@ -55,7 +55,10 @@ class EdenFoldLayer(nn.Module):
         # dynamic_folds: f o i (folds, out_features, in_features)
         # x: b t i (batch, tokens, in_features)
         
-        # Output shape: [Batch, Tokens, out_features]
-        out = torch.einsum('btf, foi, bti -> bto', fold_probs, dynamic_folds, x)
+        # Step 1: Project the input sequence across all DNA folds (bti * foi -> btfo)
+        x_projected = torch.einsum('bti, foi -> btfo', x, dynamic_folds)
+        
+        # Step 2: Weight the projections by the learned gate probabilities and collapse (btfo * btf -> bto)
+        out = torch.einsum('btfo, btf -> bto', x_projected, fold_probs)
         
         return out + self.bias
