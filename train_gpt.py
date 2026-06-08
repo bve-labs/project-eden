@@ -230,18 +230,18 @@ def train():
     print(f"Initializing Project EDEN on device: {device}")
 
     # Hyperparams
-    block_size = 128
-    batch_size = 32
-    max_iters = 2000
+    block_size = 256
+    batch_size = 512
+    max_iters = 50000
     
     # Prepare data
     prepare_dummy_data("fineweb.txt", "fineweb.bin")
     dataset = EdenByteDataset("fineweb.bin", block_size)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    # Init model
+    # Init model and leverage Mixed Precision (BF16 is natively accelerated on Hopper)
     model = EdenLM().to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=6e-4) # Slightly aggressive for larger batch sizes
 
     print(f"Model initialized. Total Parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     print(f"Notice how tiny the parameter count is! The rest is virtual DNA.")
@@ -264,8 +264,12 @@ def train():
                 
             x, y = x.to(device), y.to(device)
             
+            # Cast forward pass to automatic mixed precision
             optimizer.zero_grad(set_to_none=True)
-            logits, loss = model(x, y)
+            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+                logits, loss = model(x, y)
+
+            # Backward pass and step use the autocasted loss
             loss.backward()
             optimizer.step()
 

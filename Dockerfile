@@ -1,40 +1,33 @@
-# Use an official NVIDIA CUDA base optimized for PyTorch deep learning
-FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
+# Use official NVIDIA CUDA base runtime optimized for PyTorch
+FROM pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime
 
-# Prevent interactive prompts during installation
-ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /workspace
 
-# 1. Install standard system dependencies including curl and gnupg
-RUN apt-get update && apt-get install -y \
-    python3-pip \
-    python3-dev \
-    git \
+# Install system utilities and the official Microsoft ODBC SQL Driver 18 dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    gnupg \
-    && rm -rf /var/lib/apt/lists/*
-
-# 2. Add Microsoft repository and install the ODBC 18 Driver
-RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
-    && curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+    gnupg2 \
+    ca-certificates \
+    build-essential \
+    unixodbc-dev \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/microsoft.gpg \
+    && curl -fsSL https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev \
+    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 mssql-tools18 \
+    && echo 'export PATH="$PATH:/opt/mssql-tools18/bin"' >> ~/.bashrc \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Set the operational working directory inside the container
-WORKDIR /app
-
-# Copy dependency specifications and install cleanly
+# Install Python requirements
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir datasets pyodbc numpy tokenizers
 
-# Copy the core architecture scripts and binary assets into the image
-COPY train_gpt.py .
-COPY prepare_data.py .
-COPY generate.py .
-COPY fineweb.bin .
+# Copy project files into the workspace container
+COPY . .
 
-# Set environment variables for optimized CUDA performance
-ENV PYTHONUNBUFFERED=1
+# Run the data preparation script INSIDE the container during the build phase
+RUN python3 prepare_data.py
 
-# By default, trigger the pre-training loop when the container spins up
-CMD ["python3", "train_gpt.py"]
+# Default command will start the pre-training execution pipeline
+CMD ["python", "train_gpt.py"]
