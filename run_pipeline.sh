@@ -14,6 +14,8 @@ echo "🧠 Step 2: Executing Foundational Pre-training (train_gpt.py)..."
 docker run --gpus all --rm \
   -v $(pwd):/workspace \
   -e AZURE_SQL_CONNECTION_STRING="${AZURE_SQL_CONNECTION_STRING}" \
+  -e EDEN_DASHBOARD_REVALIDATE_URL="${EDEN_DASHBOARD_REVALIDATE_URL}" \
+  -e REVALIDATION_TOKEN="${REVALIDATION_TOKEN}" \
   project-eden:latest python train_gpt.py
 
 # 3. Chat Fine-Tuning (The Epigenome)
@@ -22,6 +24,8 @@ echo "💬 Step 3: Executing Epigenetic Chat Fine-Tuning (train_chat.py)..."
 docker run --gpus all --rm \
   -v $(pwd):/workspace \
   -e AZURE_SQL_CONNECTION_STRING="${AZURE_SQL_CONNECTION_STRING}" \
+  -e EDEN_DASHBOARD_REVALIDATE_URL="${EDEN_DASHBOARD_REVALIDATE_URL}" \
+  -e REVALIDATION_TOKEN="${REVALIDATION_TOKEN}" \
   project-eden:latest python train_chat.py
 
 echo "✅ Pipeline Complete! All artifacts are safely stored on the Spheron host disk."

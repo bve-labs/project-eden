@@ -3,16 +3,14 @@ Project EDEN: Epigenetic Data Encoding Network
 Subtitle: Epigenetic Implicit Neural Representation
 Author: BVE LABS
 
-Chat fine-tuning script for EDEN. Starts from the foundational checkpoint
-and tunes on byte-level instruction data encoded in instructions.bin.
+A 16MB-constrained language model architecture that bypasses standard weight storage
+by initializing implicit neural representations from fixed genetic seeds, training
+only the epigenetic mixing coefficients.
 """
 import os
 import math
 import time
 import uuid
-import json
-import urllib.error
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import torch
@@ -21,8 +19,6 @@ from torch.nn import functional as F
 import numpy as np
 from dotenv import load_dotenv
 import pyodbc
-
-from EdenFoldLayer import EdenFoldLayer
 
 # Load environment configuration
 load_dotenv(Path(__file__).with_name(".env.local"))
@@ -72,29 +68,6 @@ def report_log_error(future):
     error = future.exception()
     if error is not None:
         print(f"Azure SQL log insert failed: {error}")
-
-def trigger_dashboard_revalidation(run_id):
-    revalidate_url = os.environ.get("EDEN_DASHBOARD_REVALIDATE_URL")
-    revalidation_token = os.environ.get("REVALIDATION_TOKEN")
-    if not revalidate_url or not revalidation_token:
-        return
-
-    payload = json.dumps({
-        "secret": revalidation_token,
-        "runId": run_id,
-    }).encode("utf-8")
-    request = urllib.request.Request(
-        revalidate_url,
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-
-    try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            print(f"Dashboard revalidation triggered for run_id {run_id}: HTTP {response.status}")
-    except (urllib.error.URLError, TimeoutError) as e:
-        print(f"Dashboard revalidation skipped for run_id {run_id}: {e}")
 
 # =============================================================================
 # 1. THE ZERO-VOCAB TOKENIZER
@@ -150,18 +123,45 @@ def prepare_dummy_data(text_file: str, bin_file: str):
 # =============================================================================
 # 3. THE EDEN ARCHITECTURE (Implicit Neural Representation)
 # =============================================================================
+class EdenLayer(nn.Module):
+    """
+    The core innovation. Replaces nn.Linear.
+    Expands a 4-byte seed into a massive weight matrix in VRAM, 
+    but only saves/learns the tiny mixing coefficients.
+    """
+    def __init__(self, in_features, out_features, seed=42):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        
+        # 1. The Epigenome: This is the ONLY thing we train and save.
+        # A tiny vector of coefficients. Size: ~1KB.
+        self.mixing_coeffs = nn.Parameter(torch.ones(1)) 
+        self.bias = nn.Parameter(torch.zeros(out_features))
+
+        # 2. The Genome (DNA): We expand the seed into VRAM immediately.
+        # requires_grad=False ensures it is never trained or saved to the state_dict.
+        generator = torch.Generator().manual_seed(seed)
+        base_weight = torch.randn((out_features, in_features), generator=generator) / math.sqrt(in_features)
+        self.register_buffer('base_weight', base_weight, persistent=False) # not saved to the state_dict
+
+    def forward(self, x):
+        # Mix the static DNA with the learned Epigenetics
+        dynamic_weight = self.base_weight * self.mixing_coeffs
+        return F.linear(x, dynamic_weight, self.bias)
+
 class EdenBlock(nn.Module):
-    def __init__(self, d_model, n_heads, seed, num_folds=4):
+    def __init__(self, d_model, n_heads, seed):
         super().__init__()
         self.ln_1 = nn.LayerNorm(d_model)
-        # Chromatin MoE projections keep the virtual DNA frozen and route per byte.
-        self.attn_qkv = EdenFoldLayer(d_model, 3 * d_model, num_folds=num_folds, seed=seed+1)
-        self.attn_proj = EdenFoldLayer(d_model, d_model, num_folds=num_folds, seed=seed+2)
+        # Replacing standard QKV projections with EDEN layers
+        self.attn_qkv = EdenLayer(d_model, 3 * d_model, seed=seed+1)
+        self.attn_proj = EdenLayer(d_model, d_model, seed=seed+2)
         self.n_heads = n_heads
         
         self.ln_2 = nn.LayerNorm(d_model)
-        self.mlp_fc1 = EdenFoldLayer(d_model, 4 * d_model, num_folds=num_folds, seed=seed+3)
-        self.mlp_fc2 = EdenFoldLayer(4 * d_model, d_model, num_folds=num_folds, seed=seed+4)
+        self.mlp_fc1 = EdenLayer(d_model, 4 * d_model, seed=seed+3)
+        self.mlp_fc2 = EdenLayer(4 * d_model, d_model, seed=seed+4)
 
     def forward(self, x):
         B, T, C = x.size()
@@ -187,17 +187,17 @@ class EdenBlock(nn.Module):
         return x
 
 class EdenLM(nn.Module):
-    def __init__(self, vocab_size=256, d_model=512, n_heads=8, n_layers=8, num_folds=4):
+    def __init__(self, vocab_size=256, d_model=512, n_heads=8, n_layers=8):
         super().__init__()
         self.token_emb = nn.Embedding(vocab_size, d_model)
         self.pos_emb = nn.Embedding(1024, d_model) # Max context 1024 bytes
         
         self.blocks = nn.Sequential(*[
-            EdenBlock(d_model, n_heads, seed=1337 + i*10, num_folds=num_folds) for i in range(n_layers)
+            EdenBlock(d_model, n_heads, seed=1337 + i*10) for i in range(n_layers)
         ])
         
         self.ln_f = nn.LayerNorm(d_model)
-        self.lm_head = EdenFoldLayer(d_model, vocab_size, num_folds=num_folds, seed=9999)
+        self.lm_head = EdenLayer(d_model, vocab_size, seed=9999)
 
     def forward(self, idx, targets=None):
         B, T = idx.size()
@@ -216,7 +216,7 @@ class EdenLM(nn.Module):
         return logits, loss
 
 # =============================================================================
-# 4. THE CHAT FINE-TUNING LOOP & BPB CALCULATION
+# 4. THE TRAINING LOOP & BPB CALCULATION
 # =============================================================================
 def train():
     # Detect Apple Silicon (MPS), CUDA, or fallback to CPU
@@ -227,26 +227,21 @@ def train():
     else:
         device = "cpu"
     
-    print(f"Initializing Project EDEN chat fine-tuning on device: {device}")
+    print(f"Initializing Project EDEN on device: {device}")
 
     # Hyperparams
     block_size = 128
     batch_size = 32
     max_iters = 2000
     
-    # Prepare instruction-tuning data
-    if not os.path.exists("instructions.bin"):
-        raise FileNotFoundError(
-            "instructions.bin not found. Run `python prepare_instruct.py` first."
-        )
-    dataset = EdenByteDataset("instructions.bin", block_size)
+    # Prepare data
+    prepare_dummy_data("fineweb.txt", "fineweb.bin")
+    dataset = EdenByteDataset("fineweb.bin", block_size)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     # Init model
     model = EdenLM().to(device)
-    model.load_state_dict(torch.load("eden_artifact.pt", map_location=device))
-    print("Loaded foundational checkpoint from eden_artifact.pt")
-    optimizer = torch.optim.AdamW(model.parameters(), lr=3e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
 
     print(f"Model initialized. Total Parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     print(f"Notice how tiny the parameter count is! The rest is virtual DNA.")
@@ -255,7 +250,7 @@ def train():
     model.train()
     run_id = uuid.uuid4().hex[:12]
     log_executor = ThreadPoolExecutor(max_workers=1) if AZURE_SQL_CONN_STR else None
-    print(f"Chat fine-tuning run_id: {run_id}")
+    print(f"Training run_id: {run_id}")
     if log_executor is None:
         print("Azure SQL logging disabled. Set AZURE_SQL_CONNECTION_STRING to enable it.")
     else:
@@ -298,13 +293,11 @@ def train():
         if log_executor is not None:
             log_executor.shutdown(wait=True)
 
-    trigger_dashboard_revalidation(run_id)
-
-    # Save the isolated chat fine-tuned artifact.
-    torch.save(model.state_dict(), "eden_artifact_chat.pt")
-    file_size_kb = os.path.getsize("eden_artifact_chat.pt") / 1024
-    print(f"\nChat Fine-Tuning Complete. Artifact saved.")
-    print(f"Final Chat Artifact Size: {file_size_kb:.2f} KB! (Foundational checkpoint preserved)")
+    # Save the 16MB artifact (it will be fractions of a megabyte!)
+    torch.save(model.state_dict(), "eden_artifact.pt")
+    file_size_kb = os.path.getsize("eden_artifact.pt") / 1024
+    print(f"\nTraining Complete. Artifact saved.")
+    print(f"Final Artifact Size: {file_size_kb:.2f} KB! (Well under the 16,000,000 Byte limit)")
 
 if __name__ == "__main__":
     train()

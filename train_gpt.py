@@ -11,6 +11,9 @@ import os
 import math
 import time
 import uuid
+import json
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import torch
@@ -70,6 +73,29 @@ def report_log_error(future):
     error = future.exception()
     if error is not None:
         print(f"Azure SQL log insert failed: {error}")
+
+def trigger_dashboard_revalidation(run_id):
+    revalidate_url = os.environ.get("EDEN_DASHBOARD_REVALIDATE_URL")
+    revalidation_token = os.environ.get("REVALIDATION_TOKEN")
+    if not revalidate_url or not revalidation_token:
+        return
+
+    payload = json.dumps({
+        "secret": revalidation_token,
+        "runId": run_id,
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        revalidate_url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            print(f"Dashboard revalidation triggered for run_id {run_id}: HTTP {response.status}")
+    except (urllib.error.URLError, TimeoutError) as e:
+        print(f"Dashboard revalidation skipped for run_id {run_id}: {e}")
 
 # =============================================================================
 # 1. THE ZERO-VOCAB TOKENIZER
@@ -271,6 +297,8 @@ def train():
     finally:
         if log_executor is not None:
             log_executor.shutdown(wait=True)
+
+    trigger_dashboard_revalidation(run_id)
 
     # Save the 16MB artifact (it will be fractions of a megabyte!)
     torch.save(model.state_dict(), "eden_artifact.pt")

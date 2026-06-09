@@ -1,52 +1,83 @@
-# Project EDEN: Master Context Summary (MCS)
+# The Objective Roadmap
 
-This document serves as the comprehensive architectural blueprint, infrastructure overview, and operational summary for **Project EDEN (Epigenetic Data Encoding Network)**. It captures the engineering decisions, technical stack, and data paradigms established for development, benchmarking, website write-ups, or technical blogging.
-
----
-
-## 1. The Core Architectural Innovation
-
-Project EDEN is a highly constrained language model framework designed to fit strictly under a **16MB hardware footprint limit**. It completely re-imagines how neural network weights are handled by introducing an **Epigenetic Implicit Neural Representation**:
-
-* **The Genome (Fixed DNA):** Instead of storing massive weight matrices on a storage drive, the model utilizes fixed, deterministic random seeds to instantiate large pseudo-random weight buffers (`base_weight`) directly inside VRAM at initialization. These base weights are frozen (`requires_grad=False`) and are never saved to disk.
-
-* **The Epigenome (Chromatin Routing):** The only parameters the model trains and saves are ultra-lean fold gates (`chromatin_gate`), fold-level `mixing_coeffs`, and standard biases. During the forward pass, `EdenFoldLayer` routes each byte context across fixed pseudo-random DNA folds with `torch.einsum`.
-
-* **The Result:** The model achieves extreme compression. A completed local pre-training run yields a final saved checkpoint (`eden_artifact.pt`) of just **2,805.87 KB (roughly 2.8 MB)**. This easily satisfies the strict 16MB threshold while preserving an active working expression of 709,921 parameters.
+To succeed, we cannot just build cool technology in a vacuum; we have to validate the core assumptions and make sure we are solving a real problem before we spend time building dashboards.
 
 ---
 
-## 2. The Data & Tokenization Pipeline
+## Phase 1: Prove the Amoeba Protocol (Current)
 
-To maximize computational efficiency and bypass structural bloat, the data layer eliminates vocabulary layers and tokenization overhead:
+We don't scale the hardware or the datasets until the core routing logic proves its worth. The static `eden-folds` baseline is currently sitting at a 1.68 cross-entropy loss. Amoeba must unequivocally crush this.
 
-* **Zero-Vocab Byte Tokenizer:** The architecture does not use traditional tokenizers (like SentencePiece or Tiktoken). It implements a literal **ByteTokenizer** where the vocabulary size is fixed exactly at **256** (representing the raw integer values of UTF-8 encoded bytes from 0 to 255). The tokenizer file footprint is exactly 0 bytes.
+* **The Task:** We inject a decay mechanism into the `chromatin_gate`. If a fold reduces loss, its weight pathway strengthens. If it doesn't, it decays.
 
-* **Zero-Latency Data Fetching:** The dataset pipeline utilizes a memory-mapped binary array (`np.memmap`) via the `EdenByteDataset` class. This enables non-blocking, zero-latency streaming of raw byte sequences straight from disk storage into memory.
+* **The Execution:** We run a strict A/B test. We pit the current 1.68 `eden-folds` baseline against an `eden-amoeba` branch using the exact same 232MB dataset.
 
-* **Current Slice:** For initial evaluation and correctness testing, the training pipeline uses an isolated local text corpus ("The Independent Jane") compiled into a raw binary stream (`fineweb.bin`).
-
-* OLD MODEL
-* **The Result:** The model achieves extreme compression. A completed local pre-training run yields a final saved checkpoint (`eden_artifact.pt`) of just **2,805.87 KB (roughly 2.8 MB)**. This easily satisfies the strict 16MB threshold while preserving an active working expression of 709,921 parameters.
+* **The Milestone:** The Amoeba routing must break the **1.60 barrier** and prove a trajectory toward the **1.50 gate** on the same exact data. If it plateaus at 1.7x, the protocol is rejected.
 
 ---
 
-## 3. The Telemetry & Infrastructure Stack
+## Phase 2: Data Scaling & The Karpathy Swarm (Automation)
 
-The logging engine is engineered to support distributed cloud scaling natively, avoiding the network latency bottlenecks common to edge training loops:
+Once the biological routing is mathematically validated, humans step out of the hyperparameter loop.
 
-* **Asynchronous Logging Engine:** Built with a thread-isolated Python design, database operations are decoupled from execution. Telemetry data payloads (`run_id`, `step`, `loss`, `val_bpb`, `step_time`) are pushed to a background `ThreadPoolExecutor`. This allows the primary GPU training loop on Apple Silicon (`device: mps`) to process subsequent tensor batches continuously without idling for database acknowledgments.
+* **The Task:** We pull down a 1GB+ high-quality instructional dataset (e.g., a massive slice of Alpaca or OpenHermes) to give the model actual reasoning context.
 
-* **Serverless Azure SQL Database:** The persistence layer is hosted via a **Serverless Azure SQL instance** deployed in the **Central US region** to maintain low-latency, round-trip times from Florida development environments. It leverages an auto-pausing free allowance tier capped safely via a hard infrastructure ceiling (**Overage billing: Disabled**) to eliminate unexpected cloud bill scaling.
+* **The Execution:** We deploy a single Karpathy autoresearch Swarm on a stable, dedicated instance. Its only job is to iterate on the Amoeba decay rates, learning rates, and batch sizes over 1,000-step windows.
 
-* **Production Portability & Environment:**
-* **Local Mac Stack:** Powered by Apple Silicon hardware utilizing Homebrew-backed database management drivers (`unixodbc` and `msodbcsql18`) connected directly to Cursor IDE using a streamlined Node.js database client extension to bypass heavy local virtual machine dependencies.
-* **Cloud Docker Stack:** The container build (`Dockerfile`) combines optimized `nvidia/cuda` image bases with explicit upstream Microsoft package keys. This builds the runtime dependencies (`msodbcsql18` and `unixodbc-dev`) straight into the deployment layer, guaranteeing zero-configuration environment portability when spinning up headless nodes across alternative decentralized or traditional clouds (e.g., Spheron).
+* **The Milestone (The Super Bowl):** The swarm hits the elite **sub-1.3 loss floor**, putting this 16MB architecture in the same statistical weight class as the OpenAI parameter golf winners.
 
 ---
 
-## 4. Operational Metrics & Conversational Roadmap
+## Phase 3: The Dashboard & Market Discovery (Productization)
 
-* **Pre-Training Verifiability:** To evaluate learning capability, cross-entropy validation loss is continuously transformed into a normalized **Validation Bits-Per-Byte (val_bpb)** score ($val\_bpb = \frac{loss}{\ln(2)}$). Local training logs document structural convergence, with loss scaling down cleanly from an initial **5.75** down to **2.70**, and $val\_bpb$ stabilizing below **3.90**.
+Once the model is learning efficiently, we need to expose the telemetry and figure out who actually needs a 16MB LLM.
 
-* **Downstream Chat-Instruction Plan:** Because the model lacks structural token slots for distinct prompt markers, conversation engineering relies on raw ASCII markers injected into the raw byte-stream text layout (`<|USER|>\n...\n<|BOT|>\n...\n<|END|>`). The updated inference configuration (`generate.py`) enforces sliding multi-byte sequence checks to stream decoded UTF-8 string data directly to standard output, terminating dynamically the instant the sliding tracking array identifies the literal trailing byte values of the closing `<|END|>` delimiter.
+* **The Task:** Build a lightweight telemetry dashboard to visualize the dynamic folds, decay routing, and loss curves in real-time.
+
+* **The Execution:** This is where we focus on asking the right questions to the market. We don't pitch the tech; we investigate the problems. Who is currently blocked by hardware limits? Is it IoT device manufacturers? Edge computing networks? Mobile app developers? We use the dashboard as the ultimate proof-of-concept during discovery interviews.
+
+* **The Milestone:** Securing the first pilot integration of the EDEN architecture in a constrained hardware environment.
+
+---
+
+## The Next Immediate Step
+
+We keep it iterative. We draft the Amoeba logic, push it to a new branch, and run the A/B test while your current H100 run finishes its baseline.
+
+---
+
+## The Biological Metaphor: Moving from DNA to Cells
+
+Right now, Project EDEN is operating at the molecular level. We have fixed "DNA" (frozen weights) and an "Epigenome" (the Chromatin gate determining which folds to read). To push this further without bloat, we need to look at cellular efficiency and biological spatial routing.
+
+### Slime-Mold Spatial Routing
+
+Amoebas, specifically slime molds (*Physarum polycephalum*), solve highly complex spatial routing problems (like mazes) to find food with maximum efficiency and zero brain capacity. Instead of a standard linear MoE gate, we can structure the `chromatin_gate` to use a localized, decay-based routing algorithm. If a specific fold yields a high activation (finds the "food"), the pathway strengthens; if it doesn't, the path decays.
+
+### Organelle Segregation
+
+Cells compartmentalize tasks. We could expand the architecture so that different transformer blocks act as distinct organelles. Early layers (the "ribosomes") only decode raw syntax, while later layers (the "nucleus") only fold for deep semantic logic.
+
+### The Diminishing Returns Test
+
+If we just add 10,000 folds, we are basically just building a standard LLM the hard way. The goal of MVP 3.0 must be finding the absolute maximum expressive capacity a single hardware node can handle while keeping the disk file under 16MB.
+
+---
+
+## MVP 3.5: The Swarm Strategy — Dual-Agent Orchestration
+
+Using Karpathy's autoresearch repo is the perfect move, but we should not hand it a blank check yet. We need to build the "what" (the biological Organelle/Amoeba layer) manually, and let the swarm figure out the "how" (the hyperparameter routing).
+
+Partitioning the optimization into a dual-agent orchestration layer requires tight control over agentic workflows. Managing concurrent swarm operations across your primary IDEs, like Cursor or Antigravity, will allow us to pit these architectural concepts against each other in real-time.
+
+* **Swarm Alpha (The Biologist):** This agent's sole directive is architectural efficiency. It mutates the `num_folds`, tweaks the Einstein summation paths, and tests the "Slime Mold" decay algorithms. Its success metric is highest validation throughput per MB of active VRAM.
+
+* **Swarm Beta (The Synthesizer):** This agent focuses entirely on the data and learning rate. It tests different batch sizes, gradient accumulation steps, and curriculum learning strategies to squeeze every drop of context out of the larger datasets.
+
+---
+
+## Data & The 1.5 Loss Floor
+
+To get coherent, logical outputs to complex questions, the model cannot just read the same 50,000 samples over and over. It will overfit and memorize.
+
+We need to scale the dataset significantly. We will compile a massive 1GB+ chunk of technical, logical, and conversational data. Because the architecture streams data directly from disk using `np.memmap`, increasing the dataset size to 10 million samples won't use a single extra byte of VRAM. The swarms will then use this expanded context to drive the loss down toward that 1.2 range.
