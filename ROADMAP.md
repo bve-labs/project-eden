@@ -6,13 +6,63 @@ To succeed, we cannot just build cool technology in a vacuum; we have to validat
 
 ## Phase 1: Prove the Amoeba Protocol (Current)
 
-We don't scale the hardware or the datasets until the core routing logic proves its worth. The static `eden-folds` baseline is currently sitting at a 1.68 cross-entropy loss. Amoeba must unequivocally crush this.
+We don't scale the hardware or the datasets until the core routing logic proves its worth. The static `eden-folds` baseline is currently sitting near a 1.68 cross-entropy loss. Amoeba must beat that result on the same corpus, topology, and training budget.
 
-* **The Task:** We inject a decay mechanism into the `chromatin_gate`. If a fold reduces loss, its weight pathway strengthens. If it doesn't, it decays.
+* **The Task:** The `chromatin_gate` now routes through non-persistent fold vitality. Each batch records detached fold utilization during the forward pass; the training loop then reinforces recently used folds when loss improves against the EMA baseline and decays them when it does not.
 
-* **The Execution:** We run a strict A/B test. We pit the current 1.68 `eden-folds` baseline against an `eden-amoeba` branch using the exact same 232MB dataset.
+* **The Execution:** Run a strict A/B test. Compare the `eden-folds` baseline against `eden-amoeba` using the same 232MB `fineweb.bin`, `block_size=256`, `batch_size=512`, `max_iters=50000`, `lr=6e-4`, `d_model=512`, `n_layers=8`, `n_heads=8`, and `num_folds=4`.
 
 * **The Milestone:** The Amoeba routing must break the **1.60 barrier** and prove a trajectory toward the **1.50 gate** on the same exact data. If it plateaus at 1.7x, the protocol is rejected.
+
+---
+
+## Phase 1 Execution Contract
+
+Before any long H100 run, prove that artifacts can survive topology changes and that the mounted dataset is the real FineWeb binary:
+
+```bash
+python smoke_checkpoint_contract.py
+python prepare_data.py
+```
+
+`smoke_checkpoint_contract.py` validates wrapped checkpoint round trips, legacy bare `state_dict` loading, 1-fold and 4-fold reconstruction, non-persistent virtual DNA buffers, and the 16MB artifact size guardrail.
+
+Every production pre-training run now saves `eden_artifact.pt` as a compact self-describing dictionary:
+
+```text
+{
+  "format": "eden-checkpoint",
+  "format_version": 1,
+  "model_state": ...,
+  "config": ...,
+  "metrics": ...
+}
+```
+
+`generate.py` and `train_chat.py` both load through the shared checkpoint loader, so a 1-fold legacy artifact, current 4-fold artifact, or future routed artifact reconstructs from its own metadata instead of assuming `EdenLM()` defaults.
+
+Strict A/B launch commands:
+
+```bash
+# Static spatial-fold baseline on the same corpus/config
+EDEN_PROTOCOL=eden-folds python train_gpt.py
+
+# Amoeba routing validation on the same corpus/config
+EDEN_PROTOCOL=eden-amoeba python train_gpt.py
+```
+
+Docker runs must use semantic image tags and must not use `:latest`:
+
+```bash
+docker build -t project-eden:v2-amoeba .
+docker run --gpus all --rm \
+  -v "$PWD:/workspace" \
+  -e EDEN_FINEWEB_MIN_BYTES=220000000 \
+  -e EDEN_PROTOCOL=eden-amoeba \
+  project-eden:v2-amoeba python train_gpt.py
+```
+
+`train_gpt.py` refuses to train on a missing or tiny `fineweb.bin` by default. `EDEN_ALLOW_DUMMY_DATA=1` exists only for local smoke tests and must not be used for A/B results.
 
 ---
 
@@ -42,7 +92,7 @@ Once the model is learning efficiently, we need to expose the telemetry and figu
 
 ## The Next Immediate Step
 
-We keep it iterative. We draft the Amoeba logic, push it to a new branch, and run the A/B test while your current H100 run finishes its baseline.
+Keep it iterative: run checkpoint smokes locally, confirm the mounted `fineweb.bin` passes preflight, then launch the `eden-folds` / `eden-amoeba` A/B with explicit `EDEN_PROTOCOL` labels and semantic Docker tags.
 
 ---
 

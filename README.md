@@ -73,7 +73,7 @@ pip install -r requirements.txt
 
 ### 2. Configure environment variables
 
-Create a `.env.local` file in the project root:
+Create a `.env.local` file in the project root and keep it out of Git:
 
 ```bash
 AZURE_SQL_CONNECTION_STRING=your_connection_string
@@ -84,7 +84,7 @@ AZURE_SQL_USERNAME=your_user
 AZURE_SQL_PASSWORD=your_password
 ```
 
-If these are not set, training runs normally with logging silently disabled.
+If these are not set, training runs normally with logging silently disabled. Never commit real connection strings, passwords, firewall IPs, or dashboard tokens to this public repository.
 
 ### 3. Prepare training data
 
@@ -96,23 +96,38 @@ python prepare_data.py
 python prepare_instruct.py
 ```
 
-### 4. Run foundational pre-training
+### 4. Verify the checkpoint contract
+
+```bash
+python smoke_checkpoint_contract.py
+```
+
+This CPU-only smoke test validates wrapped checkpoint round trips, legacy bare `state_dict` loading, 1-fold and 4-fold reconstruction, non-persistent virtual DNA buffers, and the 16MB artifact guardrail.
+
+### 5. Run foundational pre-training
 
 ```bash
 python train_gpt.py
 ```
 
-Saves checkpoint to `eden_artifact.pt`. Training logs `run_id`, `step`, `loss`, `val_bpb`, and `step_time` to Azure SQL asynchronously — the GPU loop never blocks on database writes.
+Saves a self-describing checkpoint to `eden_artifact.pt` with `model_state`, exact topology `config`, and run `metrics`. Training logs `run_id`, `step`, `loss`, `val_bpb`, and `step_time` to Azure SQL asynchronously — the GPU loop never blocks on database writes.
 
-### 5. Run instruction fine-tuning (chat)
+For A/B runs, label the protocol explicitly while keeping the same `fineweb.bin` and hyperparameters:
+
+```bash
+EDEN_PROTOCOL=eden-folds python train_gpt.py
+EDEN_PROTOCOL=eden-amoeba python train_gpt.py
+```
+
+### 6. Run instruction fine-tuning (chat)
 
 ```bash
 python train_chat.py
 ```
 
-Loads `eden_artifact.pt`, fine-tunes on Alpaca instruction data at a reduced learning rate (`3e-5`), and saves to `eden_artifact_chat.pt` — preserving the foundational checkpoint.
+Loads `eden_artifact.pt` through the shared checkpoint contract, fine-tunes on Alpaca instruction data at a reduced learning rate (`3e-5`), and saves the same wrapped format to `eden_artifact_chat.pt` — preserving the foundational checkpoint.
 
-### 6. Generate text
+### 7. Generate text
 
 ```bash
 # Foundational model
@@ -122,7 +137,7 @@ python generate.py --checkpoint eden_artifact.pt --prompt "Project EDEN"
 python generate.py --checkpoint eden_artifact_chat.pt --prompt "Explain what EDEN is"
 ```
 
-`generate.py` wraps prompts in `<|USER|>` / `<|BOT|>` / `<|END|>` boundaries and streams decoded UTF-8 output to stdout, stopping automatically when `<|END|>` is detected.
+`generate.py` reconstructs the model topology from the checkpoint config, wraps prompts in `<|USER|>` / `<|BOT|>` / `<|END|>` boundaries, and streams decoded UTF-8 output to stdout, stopping automatically when `<|END|>` is detected. Legacy bare `state_dict` artifacts remain loadable by inferring architecture from tensor shapes.
 
 Full options:
 
@@ -137,13 +152,34 @@ python generate.py --help
 The `Dockerfile` builds an NVIDIA CUDA image with the Microsoft ODBC 18 driver baked in for cloud GPU clusters.
 
 ```bash
-docker build -t project-eden .
-docker run --gpus all \
-  -e AZURE_SQL_CONNECTION_STRING="..." \
-  project-eden
+docker build -t project-eden:v2-amoeba .
+docker run --gpus all --rm \
+  -e AZURE_SQL_CONNECTION_STRING="${AZURE_SQL_CONNECTION_STRING:?set locally, do not commit}" \
+  -e EDEN_PROTOCOL=eden-amoeba \
+  project-eden:v2-amoeba
 ```
 
-`fineweb.bin` is included in the build context (see `.dockerignore`). Secrets and checkpoints are excluded from the image.
+`train_gpt.py` refuses to run against a missing or tiny `fineweb.bin` by default. Build or mount the real FineWeb binary before A/B runs; use `EDEN_ALLOW_DUMMY_DATA=1` only for local smoke tests.
+
+For strict Docker A/B runs, launch pre-training directly and keep the mounted workspace, image tag, dataset, and hyperparameters fixed:
+
+```bash
+docker run --gpus all --rm \
+  -v "$PWD:/workspace" \
+  -e AZURE_SQL_CONNECTION_STRING="${AZURE_SQL_CONNECTION_STRING:?set locally, do not commit}" \
+  -e EDEN_FINEWEB_MIN_BYTES=220000000 \
+  -e EDEN_PROTOCOL=eden-folds \
+  project-eden:v2-amoeba python train_gpt.py
+
+docker run --gpus all --rm \
+  -v "$PWD:/workspace" \
+  -e AZURE_SQL_CONNECTION_STRING="${AZURE_SQL_CONNECTION_STRING:?set locally, do not commit}" \
+  -e EDEN_FINEWEB_MIN_BYTES=220000000 \
+  -e EDEN_PROTOCOL=eden-amoeba \
+  project-eden:v2-amoeba python train_gpt.py
+```
+
+`fineweb.bin` is included in the build context (see `.dockerignore`) or provided by the mounted workspace. If you mount over `/workspace`, the mounted host copy is the one that matters. Secrets and checkpoints are excluded from the image.
 
 ---
 

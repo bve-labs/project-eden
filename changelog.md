@@ -4,11 +4,127 @@ This ledger tracks all manual architectural shifts, hyperparameter adjustments, 
 
 ---
 
+## [2026-06-09] - Branch: feat/amoeba-routing (Markdown Security Updates)
+
+* **Status:** Security updates made to `SPHERON_DEPLOYMENT.md` with the date 2026-06-09.
+* **Status:** Security updates made to `project-eden-mcs.md` with the date 2026-06-09.
+* **Status:** Security updates made to `README.md` with the date 2026-06-09.
+* **Status:** Security updates made to `planupdates.md` with the date 2026-06-09.
+* **Status:** Security updates made to `changelog.md` with the date 2026-06-09.
+* **Security Delta:** Removed public operational identifiers from Markdown docs, replaced weak SSH guidance, and made secret-bearing Docker examples reference local environment variables instead of committed values.
+
+---
+
+## [2026-06-09] - Branch: feat/amoeba-routing (Persistent Device Clarification)
+
+* **Status:** Clarifying the Spheron device map for the active dev node.
+* **Architectural Delta:** Marking `/dev/vdb` as the 750GB ephemeral instance disk and `/dev/vdc` as the 50GB `project-eden-test-v2-cnd` persistent volume in `SPHERON_DEPLOYMENT.md`.
+* **Engineering Intent:** Prevent accidental formatting or mounting of the ephemeral disk when preparing the durable EDEN workspace.
+
+---
+
+## [2026-06-09] - Branch: feat/amoeba-routing (Persistent Volume First-Attach Notes)
+
+* **Status:** Adding first-attach storage instructions for the Spheron dev volume.
+* **Architectural Delta:** Documenting the `project-eden-test-v2-cnd` persistent storage name, 50GB size, `lsblk` verification, mount commands, and the destructive nature of `mkfs.ext4`.
+* **Engineering Intent:** Prevent accidental formatting of an existing persistent EDEN volume while keeping fresh-node setup repeatable.
+
+---
+
+## [2026-06-09] - Branch: feat/amoeba-routing (Spheron Persistent Storage)
+
+* **Status:** Documenting the active Spheron persistent-volume layout for dev testing.
+* **Architectural Delta:** Updating `SPHERON_DEPLOYMENT.md` with the provider-assigned persistent backing store, `/mnt/project-eden-test-v2-cnd` symlink, MVP1 archive step, and direct Docker launch path mounted from persistent storage.
+* **Engineering Intent:** Ensure new Amoeba checkpoints, datasets, and logs are written to the durable project volume instead of ephemeral home or root disk locations.
+
+---
+
+## [2026-06-09] - Branch: feat/amoeba-routing (Pipeline Removal)
+
+* **Status:** Retiring the legacy pipeline runner after reviewing whether it improves the current A/B workflow.
+* **Architectural Delta:** Removing `run_pipeline.sh` as a supported launch surface and documenting explicit smoke, build, pre-training, and chat fine-tuning commands instead.
+* **Engineering Intent:** Reduce operational ambiguity before H100 runs. The script did not accelerate training and added a second path that could drift from the strict `eden-folds` / `eden-amoeba` comparison contract.
+
+---
+
+## [2026-06-09] - Branch: feat/amoeba-routing (Pipeline Safety Review)
+
+* **Status:** Hardening the legacy pipeline runner after reviewing it against the current checkpoint, dataset, and A/B flow.
+* **Architectural Delta:** Adding repository-root resolution, host dataset preflight, optional checkpoint smoke validation, explicit pre-training/chat protocol separation, and a chat-run toggle to `run_pipeline.sh`.
+* **Engineering Intent:** Prevent stale container mounts, hidden Docker build artifacts, dummy-data runs, and mislabeled chat fine-tuning from corrupting Phase 1 A/B results.
+
+---
+
+## [2026-06-09] - Branch: feat/amoeba-routing (Docs Alignment)
+
+* **Status:** Updating user-facing documentation after the Amoeba routing implementation pass.
+* **Architectural Delta:** Aligning the roadmap, master context, README, and deployment commands with the wrapped checkpoint contract, loss-aware Amoeba vitality, real-dataset guardrails, semantic Docker tags, and checkpoint smoke verification.
+* **Engineering Intent:** Make the next A/B run reproducible from the docs before spending H100 time on `eden-amoeba` validation.
+
+---
+
+## [2026-06-09] - Branch: feat/amoeba-routing (Checkpoint Verification Smokes)
+
+* **Status:** Adding lightweight local verification for the wrapped checkpoint contract before long H100 runs.
+* **Architectural Delta:** Introducing a standalone smoke script that validates wrapped and legacy checkpoint reloads, 1-fold and 4-fold reconstruction, non-persistent DNA buffers, and artifact size guardrails.
+* **Engineering Intent:** Catch checkpoint topology, persistence, and file-size regressions locally before spending compute on Amoeba A/B training.
+
+---
+
+## [2026-06-09] - Branch: feat/amoeba-routing (A/B Preflight)
+
+* **Status:** Hardening strict A/B execution before the next H100 run.
+* **Architectural Delta:** Adding explicit protocol run labeling, real `fineweb.bin` dataset-size guardrails, and semantic Docker image tag controls for the Amoeba pipeline.
+* **Engineering Intent:** Prevent accidental dummy-data or `:latest` container runs so `eden-folds` and `eden-amoeba` measurements stay attributable to the same corpus, hyperparameters, and image lineage.
+
+---
+
+## [2026-06-09] - Branch: feat/amoeba-routing (Loss-Aware Vitality)
+
+* **Status:** Implementing loss-improvement feedback for Amoeba fold vitality.
+* **Architectural Delta:** Moving `fold_vitality` mutation out of the forward pass and into an explicit post-batch training-loop update that reinforces recently used folds only when loss improves against an EMA baseline.
+* **Engineering Intent:** Preserve the proven two-step folded `einsum` routing path while making pathway decay/reinforcement depend on training signal instead of raw fold utilization alone.
+
+---
+
+## [2026-06-09] - Branch: feat/amoeba-routing (Reader/Writer Sync)
+
+* **Status:** Synchronizing checkpoint readers and writers across pre-training, generation, and chat fine-tuning.
+* **Architectural Delta:** Centralizing EDEN artifact load/save semantics in `train_gpt.py`, including wrapped checkpoints, current bare 4-fold state dictionaries, and legacy single-fold state dictionaries.
+* **Engineering Intent:** Ensure `eden_artifact.pt` and `eden_artifact_chat.pt` can be reconstructed from their own topology metadata while generation and chat fine-tuning consume the same compatibility path.
+
+---
+
+## [2026-06-09] - Branch: feat/amoeba-routing (Checkpoint Contract)
+
+* **Status:** Implementing self-describing checkpoint compatibility for Phase 1 Amoeba routing.
+* **Architectural Delta:** `eden_artifact.pt` and chat artifacts will save a compact metadata wrapper containing `model_state`, exact model `config`, and training `metrics` instead of a bare `state_dict`.
+* **Engineering Intent:** Allow generation and chat fine-tuning to reconstruct 1-fold, 4-fold, and future routed topologies from the artifact itself while still loading legacy bare checkpoints by inferring tensor shapes where possible.
+
+---
+
+## [2026-06-09] - Branch: feat/amoeba-routing (Pre-Implementation Hygiene)
+
+* **Status:** Branch hygiene completed before the next Amoeba routing mutation pass.
+* **Architectural Delta:** Preparing to replace bare checkpoint serialization with a metadata-wrapped artifact contract (`model_state`, `config`, `metrics`) and shared dynamic loading across pre-training, chat fine-tuning, and generation while keeping deterministic DNA buffers non-persistent.
+* **Routing Intent:** Preserve the proven two-step folded projection path while moving `fold_vitality` toward loss-aware Amoeba reinforcement/decay so pathways that help lower loss strengthen and stale routes decay without bloating the checkpoint.
+* **A/B Intent:** Keep Phase 1 measurements tied to the real 232MB `fineweb.bin`, fixed `eden-folds` hyperparameters, and explicit `eden-amoeba` run metadata so any improvement beyond the static ~1.68 loss floor can be attributed cleanly.
+
+---
+
+## [2026-06-08] - Branch: feat/amoeba-routing (Amoeba Protocol)
+
+* **Status:** Implementing Phase 1 Routing Mutation.
+* **Architectural Delta:** Upgrading `EdenFoldLayer` with a non-persistent `fold_vitality` EMA buffer and `decay_rate` control. The chromatin gate probabilities will be scaled by recent fold utilization, then renormalized before projection weighting so routing remains probabilistic while unused pathways decay.
+* **Engineering Intent:** Preserve checkpoint compactness and PyTorch autograd safety while testing whether slime-mold decay routing can beat the static `eden-folds` baseline on the same 232MB dataset.
+
+---
+
 ## [2026-06-08] - Branch: feat/eden-folds (Active Pre-Training)
 
 * **Status:** In-Progress Baseline Run (Passed Step 16,650+).
 * **Architectural Delta:** Migrated from a 1D scalar mixing vector to an 8-layer `EdenFoldLayer` MoE matrix. Optimized the heavy contraction path by breaking the single `torch.einsum` allocation into a two-step sequence (`bti -> btfo -> bto`), successfully eliminating the 192GB allocation bottleneck.
-* **Telemetry Control:** Target loss floor shifted to 1.5 - 1.7. Tracked via Azure SQL under Run ID: `7d68697de8e1`.
+* **Telemetry Control:** Target loss floor shifted to 1.5 - 1.7. Tracked via Azure SQL under a run-specific identifier that should remain out of public docs.
 
 ---
 
