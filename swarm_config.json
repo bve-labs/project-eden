@@ -1,0 +1,6 @@
+{
+  "decay_penalty": 0.014514,
+  "growth_reward": 0.050322,
+  "max_iters": 1000,
+  "target_baseline": 1.6886
+}

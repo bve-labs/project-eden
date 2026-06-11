@@ -1,6 +1,6 @@
 import "server-only"
 
-import sql from "mssql"
+import sql, { getAzureSqlPool } from "@/lib/azure-sql"
 
 export type TelemetryPoint = {
   step: number
@@ -92,54 +92,6 @@ export const fallbackTelemetry: TelemetryPayload = {
   error: null,
 }
 
-let poolPromise: Promise<sql.ConnectionPool> | null = null
-
-function getSqlConfig(): string | sql.config {
-  const connectionString = process.env.AZURE_SQL_CONNECTION_STRING
-  if (connectionString) {
-    return connectionString
-  }
-
-  const server = process.env.AZURE_SQL_SERVER
-  const database = process.env.AZURE_SQL_DATABASE
-  const user = process.env.AZURE_SQL_USERNAME
-  const password = process.env.AZURE_SQL_PASSWORD
-
-  if (!server || !database || !user || !password) {
-    throw new Error("Azure SQL environment variables are not configured.")
-  }
-
-  return {
-    server,
-    database,
-    user,
-    password,
-    port: Number(process.env.AZURE_SQL_PORT ?? 1433),
-    options: {
-      encrypt: true,
-      trustServerCertificate: false,
-    },
-    pool: {
-      max: 5,
-      min: 0,
-      idleTimeoutMillis: 30_000,
-    },
-    connectionTimeout: 30_000,
-    requestTimeout: 30_000,
-  }
-}
-
-async function getPool() {
-  if (!poolPromise) {
-    poolPromise = sql.connect(getSqlConfig()).catch((error: unknown) => {
-      poolPromise = null
-      throw error
-    })
-  }
-
-  return poolPromise
-}
-
 function toNumber(value: unknown, fallback = 0) {
   const next = Number(value)
   return Number.isFinite(next) ? next : fallback
@@ -156,11 +108,19 @@ function toFallback(error: unknown): TelemetryPayload {
 
 export async function getTelemetryPayload(): Promise<TelemetryPayload> {
   try {
-    const pool = await getPool()
+    const pool = await getAzureSqlPool()
+    const schemaResult = await pool.request().query<{ has_logged_at: number }>(`
+      SELECT CASE WHEN COL_LENGTH('dbo.training_logs', 'logged_at') IS NULL THEN 0 ELSE 1 END AS has_logged_at
+    `)
+    const hasLoggedAt = Boolean(schemaResult.recordset[0]?.has_logged_at)
+    const newestOrder = hasLoggedAt
+      ? "logged_at DESC, run_id DESC, step DESC"
+      : "run_id DESC, step DESC"
+
     const latestResult = await pool.request().query<TrainingLogRow>(`
       SELECT TOP 1 *
-      FROM training_logs
-      ORDER BY step DESC
+      FROM dbo.training_logs
+      ORDER BY ${newestOrder}
     `)
     const latestRow = latestResult.recordset[0]
 
@@ -173,11 +133,11 @@ export async function getTelemetryPayload(): Promise<TelemetryPayload> {
       .request()
       .input("currentRunId", sql.VarChar, currentRunId)
       .query<TrainingHistoryRow>(`
-        SELECT step, loss, val_bpb, step_time
-        FROM training_logs
-        WHERE run_id = @currentRunId
-        ORDER BY step ASC
-      `)
+      SELECT step, loss, val_bpb, step_time
+      FROM dbo.training_logs
+      WHERE run_id = @currentRunId
+      ORDER BY step ASC
+    `)
 
     const history = historyResult.recordset
 

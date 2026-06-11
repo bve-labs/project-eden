@@ -23,6 +23,9 @@ instructions.bin
 
 # Local backups
 *_bkup.py
+backups/
+training_output/
+prompt.txt
 
 # OS
 .DS_Store

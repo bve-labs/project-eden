@@ -189,13 +189,15 @@ Each training run generates a unique `run_id` and logs metrics to an Azure SQL `
 
 | Column | Type | Description |
 | --- | --- | --- |
+| `log_id` | `bigint identity` | Append-only row identity for new tables |
 | `run_id` | `text` | Unique 12-char hex identifier per run |
 | `step` | `integer` | Training step number |
 | `loss` | `numeric` | Cross-entropy loss |
 | `val_bpb` | `numeric` | Validation Bits-Per-Byte |
 | `step_time` | `numeric` | Seconds elapsed since last log |
+| `logged_at` | `datetime2` | UTC insert timestamp used to order appended runs |
 
-Logging runs in a background `ThreadPoolExecutor` (1 worker). Errors are printed inline but never crash the training loop.
+Logging runs in a background `ThreadPoolExecutor` (1 worker). Errors are printed inline but never crash the training loop. If `EDEN_RUN_ID` is set by an orchestrator, the training script reuses it; otherwise each run generates a fresh ID. The training scripts only insert telemetry rows and non-destructively create or upgrade `dbo.training_logs` when needed.
 
 ---
 

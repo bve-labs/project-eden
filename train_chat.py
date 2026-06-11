@@ -51,6 +51,43 @@ if not AZURE_SQL_CONN_STR:
             f"ConnectionTimeout=30;"
         )
 
+def ensure_training_logs_table():
+    if not AZURE_SQL_CONN_STR:
+        return
+
+    try:
+        with pyodbc.connect(AZURE_SQL_CONN_STR) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    IF OBJECT_ID('dbo.training_logs', 'U') IS NULL
+                    BEGIN
+                        CREATE TABLE dbo.training_logs (
+                            log_id BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                            run_id NVARCHAR(64) NOT NULL,
+                            step INT NOT NULL,
+                            loss FLOAT NOT NULL,
+                            val_bpb FLOAT NOT NULL,
+                            step_time FLOAT NOT NULL,
+                            logged_at DATETIME2(7) NOT NULL
+                                CONSTRAINT DF_training_logs_logged_at DEFAULT SYSUTCDATETIME()
+                        );
+                    END
+                    ELSE IF COL_LENGTH('dbo.training_logs', 'logged_at') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.training_logs
+                        ADD logged_at DATETIME2(7) NOT NULL
+                            CONSTRAINT DF_training_logs_logged_at DEFAULT SYSUTCDATETIME();
+                    END
+                    """
+                )
+                conn.commit()
+    except Exception as e:
+        print(f"\n[Database Warning] Could not verify training_logs append schema: {e}")
+
+def new_run_id():
+    return os.environ.get("EDEN_RUN_ID", "").strip() or uuid.uuid4().hex[:12]
+
 def log_training_metrics(run_id, step, loss, val_bpb, step_time):
     if not AZURE_SQL_CONN_STR:
         return
@@ -60,7 +97,7 @@ def log_training_metrics(run_id, step, loss, val_bpb, step_time):
         with pyodbc.connect(AZURE_SQL_CONN_STR) as conn:
             with conn.cursor() as cursor:
                 query = """
-                INSERT INTO training_logs (run_id, step, loss, val_bpb, step_time)
+                INSERT INTO dbo.training_logs (run_id, step, loss, val_bpb, step_time)
                 VALUES (?, ?, ?, ?, ?)
                 """
                 cursor.execute(query, run_id, int(step), float(loss), float(val_bpb), float(step_time))
@@ -253,7 +290,8 @@ def train():
 
     # Train
     model.train()
-    run_id = uuid.uuid4().hex[:12]
+    run_id = new_run_id()
+    ensure_training_logs_table()
     log_executor = ThreadPoolExecutor(max_workers=1) if AZURE_SQL_CONN_STR else None
     print(f"Chat fine-tuning run_id: {run_id}")
     if log_executor is None:

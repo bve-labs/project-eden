@@ -27,6 +27,7 @@ import {
   Tooltip,
 } from "recharts"
 
+import { SwarmTelemetry } from "@/components/swarm-telemetry"
 import type { TelemetryPayload } from "@/lib/telemetry"
 
 const LAYERS = [
@@ -51,7 +52,10 @@ const CONVERGENCE_TABS = [
   { key: "stepTime", label: "Step Latency" },
 ] as const
 
+const DASHBOARD_VIEWS = ["Live Matrix", "Amoeba Sandbox", "Swarm Telemetry", "Artifact Vault"] as const
+
 type ConvergenceTab = (typeof CONVERGENCE_TABS)[number]["key"]
+type DashboardView = (typeof DASHBOARD_VIEWS)[number]
 
 type CommandCenterProps = {
   telemetry: TelemetryPayload
@@ -61,6 +65,7 @@ const formatMetric = (value: number, digits = 4) => value.toFixed(digits)
 
 export function CommandCenter({ telemetry }: CommandCenterProps) {
   const [activeTab, setActiveTab] = useState<ConvergenceTab>("loss")
+  const [activeView, setActiveView] = useState<DashboardView>("Live Matrix")
   const activeSeries = telemetry.series[activeTab]
   const stepTimeAvg =
     telemetry.series.stepTime.length > 0
@@ -117,19 +122,22 @@ export function CommandCenter({ telemetry }: CommandCenterProps) {
           </div>
 
           <nav className="flex items-center gap-1 flex-wrap">
-            <button
-              className="rounded-full px-4 py-1.5 text-[11px] sm:text-xs font-semibold text-white transition-all"
-              style={{
-                background: "linear-gradient(135deg, #4f6ef7 0%, #7c9cff 100%)",
-                boxShadow: "0 2px 10px rgba(79,110,247,0.35)",
-              }}
-            >
-              Live Matrix
-            </button>
-            {["Amoeba Sandbox", "Swarm Telemetry", "Artifact Vault"].map((label) => (
+            {DASHBOARD_VIEWS.map((label) => (
               <button
                 key={label}
-                className="rounded-full px-4 py-1.5 text-[11px] sm:text-xs font-medium text-[#3c4268] transition-all hover:bg-white/40"
+                onClick={() => setActiveView(label)}
+                className="rounded-full px-4 py-1.5 text-[11px] sm:text-xs font-medium transition-all hover:bg-white/40"
+                style={
+                  activeView === label
+                    ? {
+                        background: "linear-gradient(135deg, #4f6ef7 0%, #7c9cff 100%)",
+                        boxShadow: "0 2px 10px rgba(79,110,247,0.35)",
+                        color: "#fff",
+                      }
+                    : {
+                        color: "#3c4268",
+                      }
+                }
               >
                 {label}
               </button>
@@ -157,6 +165,8 @@ export function CommandCenter({ telemetry }: CommandCenterProps) {
           </div>
         </header>
 
+        {activeView === "Live Matrix" ? (
+          <>
         <div className="mb-4 lg:mb-5 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
           <div className="glass-card rounded-2xl px-5 py-4 flex flex-col gap-1">
             <div className="text-[11px] font-medium uppercase tracking-wider text-[#6b72a8]">
@@ -497,7 +507,25 @@ export function CommandCenter({ telemetry }: CommandCenterProps) {
             </div>
           </div>
         </div>
+          </>
+        ) : activeView === "Swarm Telemetry" ? (
+          <SwarmTelemetry />
+        ) : (
+          <PlaceholderView view={activeView} />
+        )}
       </div>
+    </div>
+  )
+}
+
+function PlaceholderView({ view }: { view: Exclude<DashboardView, "Live Matrix" | "Swarm Telemetry"> }) {
+  return (
+    <div className="glass-card rounded-2xl p-8 text-[#1a1c2e]">
+      <div className="mb-2 text-sm font-semibold sm:text-base">{view}</div>
+      <p className="max-w-xl text-xs leading-relaxed text-[#6b72a8] sm:text-sm">
+        This surface is reserved for the next Project EDEN telemetry module. The Live Matrix and
+        Swarm Telemetry tabs are wired to active data paths.
+      </p>
     </div>
   )
 }
